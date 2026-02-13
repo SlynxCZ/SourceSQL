@@ -13,7 +13,7 @@ C++ style SQL interface for Node.js and TypeScript.
 ## Installation
 
 ```bash
-npm install sourcesql mysql2
+npm install sourcesql
 ```
 
 ## Usage
