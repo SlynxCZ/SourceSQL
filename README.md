@@ -1,6 +1,6 @@
 # SourceSQL
 
-**C++ style SQL interface for Node.js & TypeScript
+**C++ style SQL interface for Node.js
 inspired by Source / Source2 development**
 
 ------------------------------------------------------------------------
