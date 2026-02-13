@@ -27,4 +27,8 @@ export class MySQLConnection implements ISQLConnection {
   escapeId(value: string): string {
     return mysql.escapeId(value);
   }
+
+  escapeTable(database: string, table: string): string {
+    return `${this.escapeId(database)}.${this.escapeId(table)}`;
+  }
 }
