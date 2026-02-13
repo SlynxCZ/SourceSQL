@@ -1,6 +1,7 @@
 export interface ISQLRow {
-  getString(field: string | number): string | null;
-  getInt(field: string | number): number;
-  getFloat(field: string | number): number;
-  isNull(field: string | number): boolean;
+  GetString(field: string | number): string | null;
+  GetInt(field: string | number): number;
+  GetFloat(field: string | number): number;
+  GetInt64(field: string | number): string;
+  IsNull(field: string | number): boolean;
 }

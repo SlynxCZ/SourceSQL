@@ -1,13 +1,17 @@
 import { ISQLRow } from "@core/ISQLRow";
 
 export interface ISQLResult {
-  getRowCount(): number;
-  getFieldCount(): number;
+  GetRowCount(): number;
+  GetFieldCount(): number;
 
-  fieldNameToNum(name: string): number | null;
-  fieldNumToName(index: number): string | null;
+  FieldNameToNum(name: string): number | null;
+  FieldNumToName(index: number): string | null;
 
-  moreRows(): boolean;
-  fetchRow(): ISQLRow | null;
-  rewind(): void;
+  MoreRows(): boolean;
+  FetchRow(): ISQLRow | null;
+  CurrentRow(): ISQLRow | null;
+
+  Rewind(): void;
+
+  GetFieldType(field: number): number;
 }

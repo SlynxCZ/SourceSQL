@@ -1,15 +1,15 @@
 import { ISQLConnection } from "@core/ISQLConnection";
 import { ISQLQuery } from "@core/ISQLQuery";
 
-export async function queryEx(
+export async function QueryEx(
   conn: ISQLConnection,
   sql: string,
   params?: any[]
-): Promise<[ISQLQuery | null, any]> {
+): Promise<readonly [ISQLQuery | null, Error | null]> {
   try {
-    const q = await conn.query(sql, params);
+    const q = await conn.Query(sql, params);
     return [q, null];
-  } catch (e) {
-    return [null, e];
+  } catch (e: any) {
+    return [null, e instanceof Error ? e : new Error(String(e))];
   }
 }

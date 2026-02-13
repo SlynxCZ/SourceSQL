@@ -5,30 +5,94 @@ import { MySQLQuery } from "@drivers/mysql/MySQLQuery";
 
 export class MySQLConnection implements ISQLConnection {
   private pool: mysql.Pool;
+  private connected = false;
 
-  constructor(config: mysql.PoolOptions) {
+  constructor(private config: mysql.PoolOptions) {
     this.pool = mysql.createPool(config);
   }
 
-  async query(sql: string, params?: any[]): Promise<ISQLQuery> {
-    const [rows, meta] = await this.pool.query(sql, params);
-
+  private BuildQueryResult(rows: any, meta: any, sql: string): ISQLQuery {
     if (Array.isArray(rows)) {
-      return new MySQLQuery(rows, {});
+      return new MySQLQuery(rows, meta, sql);
     }
 
-    return new MySQLQuery([], meta);
+    return new MySQLQuery([], rows, sql);
   }
 
-  escape(value: any): string {
+  async Connect(callback?: (success: boolean) => void): Promise<void> {
+    try {
+      // ping = test connection
+      const conn = await this.pool.getConnection();
+      await conn.ping();
+      conn.release();
+
+      this.connected = true;
+      callback?.(true);
+    } catch (err) {
+      this.connected = false;
+      callback?.(false);
+      throw err;
+    }
+  }
+
+  async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
+    const [rows, meta] = await this.pool.query<any>(sql, params);
+    return this.BuildQueryResult(rows, meta, sql);
+  }
+
+  QueryCallback(
+    sql: string,
+    callback: (query: ISQLQuery | null, error?: any) => void,
+    params?: any[]
+  ) {
+    this.Query(sql, params)
+      .then(q => callback(q))
+      .catch(err => callback(null, err));
+  }
+
+  async ExecuteTransaction(
+    queries: string[],
+    success: (queries: ISQLQuery[]) => void,
+    failure: (error: string) => void
+  ) {
+    const conn = await this.pool.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      const results: ISQLQuery[] = [];
+
+      for (const sql of queries) {
+        const [rows, meta] = await conn.query<any>(sql);
+        results.push(this.BuildQueryResult(rows, meta, sql));
+      }
+
+      await conn.commit();
+      success(results);
+
+    } catch (err: any) {
+      await conn.rollback();
+      failure(err?.message ?? "Transaction failed");
+
+    } finally {
+      conn.release();
+    }
+  }
+
+  async Destroy(): Promise<void> {
+    await this.pool.end();
+    this.connected = false;
+  }
+
+  Escape(value: any): string {
     return mysql.escape(value);
   }
 
-  escapeId(value: string): string {
+  EscapeId(value: string): string {
     return mysql.escapeId(value);
   }
 
-  escapeTable(database: string, table: string): string {
-    return `${this.escapeId(database)}.${this.escapeId(table)}`;
+  EscapeTable(database: string, table: string): string {
+    return `${this.EscapeId(database)}.${this.EscapeId(table)}`;
   }
 }

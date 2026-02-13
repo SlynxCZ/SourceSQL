@@ -5,39 +5,50 @@ import { MySQLRow } from "@drivers/mysql/MySQLRow";
 export class MySQLResult implements ISQLResult {
   private index = -1;
   private fields: string[];
+  private current: ISQLRow | null = null;
 
   constructor(private rows: any[]) {
     this.fields = rows.length > 0 ? Object.keys(rows[0]) : [];
   }
 
-  getRowCount(): number {
+  GetRowCount(): number {
     return this.rows.length;
   }
 
-  getFieldCount(): number {
+  GetFieldCount(): number {
     return this.fields.length;
   }
 
-  fieldNameToNum(name: string): number | null {
+  FieldNameToNum(name: string): number | null {
     const idx = this.fields.indexOf(name);
     return idx === -1 ? null : idx;
   }
 
-  fieldNumToName(index: number): string | null {
+  FieldNumToName(index: number): string | null {
     return this.fields[index] ?? null;
   }
 
-  moreRows(): boolean {
+  MoreRows(): boolean {
     return this.index + 1 < this.rows.length;
   }
 
-  fetchRow(): ISQLRow | null {
-    if (!this.moreRows()) return null;
+  FetchRow(): ISQLRow | null {
+    if (!this.MoreRows()) return null;
     this.index++;
-    return new MySQLRow(this.rows[this.index], this.fields);
+    this.current = new MySQLRow(this.rows[this.index], this.fields);
+    return this.current;
   }
 
-  rewind(): void {
+  CurrentRow(): ISQLRow | null {
+    return this.current;
+  }
+
+  Rewind(): void {
     this.index = -1;
+    this.current = null;
+  }
+
+  GetFieldType(field: number): number {
+    return 0; // WIP
   }
 }

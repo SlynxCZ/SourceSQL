@@ -1,26 +1,48 @@
-import { ISQLQuery } from "@core/ISQLQuery";
-import { ISQLResult } from "@core/ISQLResult";
-import { MySQLResult } from "@drivers/mysql/MySQLResult";
+import { ISQLQuery, QueryType } from "@core/ISQLQuery";
+import { MySQLResult } from "./MySQLResult";
 
 export class MySQLQuery implements ISQLQuery {
-  private result: MySQLResult;
+  private result: MySQLResult | null;
+  private type: QueryType;
 
   constructor(
     rows: any[],
-    private meta: any
+    private meta: any,
+    private sql: string
   ) {
-    this.result = new MySQLResult(rows);
+    this.type = this.DetectType(sql);
+
+    if (rows && rows.length > 0) {
+      this.result = new MySQLResult(rows);
+    } else {
+      this.result = null;
+    }
   }
 
-  getResultSet(): ISQLResult {
+  private DetectType(sql: string): QueryType {
+    const q = sql.trim().toLowerCase();
+
+    if (q.startsWith("select")) return QueryType.SELECT;
+    if (q.startsWith("insert")) return QueryType.INSERT;
+    if (q.startsWith("update")) return QueryType.UPDATE;
+    if (q.startsWith("delete")) return QueryType.DELETE;
+
+    return QueryType.OTHER;
+  }
+
+  GetResultSet() {
     return this.result;
   }
 
-  getInsertId(): number {
+  GetInsertId(): number {
     return this.meta?.insertId ?? 0;
   }
 
-  getAffectedRows(): number {
+  GetAffectedRows(): number {
     return this.meta?.affectedRows ?? 0;
+  }
+
+  GetType(): QueryType {
+    return this.type;
   }
 }
