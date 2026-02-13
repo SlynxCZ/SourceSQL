@@ -26,6 +26,11 @@
     "oop",
     "sourcesql"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SlynxCZ/sourcesql"
+  },
+  "homepage": "https://github.com/SlynxCZs/sourcesql",
   "author": "Michal \"Slynx\" Přikryl",
   "license": "MIT",
   "publishConfig": {
