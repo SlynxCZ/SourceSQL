@@ -10,7 +10,7 @@
       "@drivers/*": ["drivers/*"],
       "@utils/*": ["utils/*"]
     },
-
+    "noImplicitAny": false,
     "declaration": true,
     "outDir": "dist",
     "strict": true,

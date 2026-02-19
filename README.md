@@ -1,48 +1,60 @@
 # SourceSQL
 
-**C++ style SQL interface for Node.js
-inspired by Source / Source2 development**
+C++ style SQL interface for Node.js inspired by Source / Source2 development
 
 ------------------------------------------------------------------------
 
 ## Overview
 
-`SourceSQL` is a lightweight **OOP SQL abstraction layer** designed to
-replicate the feel of **SourceMod / Source2 SQL APIs** in modern
+SourceSQL is a lightweight OOP SQL abstraction layer designed to
+replicate the feel of SourceMod / Source2 SQL APIs in modern
 JavaScript and TypeScript.
 
-It provides a **virtual-like interface (`ISQL*`)** with familiar methods
-such as:
+It provides a virtual-like interface (ISQL*) with familiar methods such as:
 
-- `Query`
-- `GetResultSet`
-- `FetchRow`
-- `GetInt64`
+- Query
+- GetResultSet
+- FetchRow
+- GetInt64
 
-The goal is to create a **low-level, predictable, and safe SQL layer**
+The goal is to create a low-level, predictable, and safe SQL layer
 that behaves similarly to C++ plugin environments.
 
 ------------------------------------------------------------------------
 
 ## Features
 
--   C++-style API (`ISQLConnection`, `ISQLQuery`, `ISQLResult`, `ISQLRow`)
--   Promise-based & callback-based queries
--   MySQL driver (`mysql2`)
--   Safe queries using prepared statements (`?`)
--   `queryEx` helper (tuple `[result, error]`)
--   Transaction support
--   BigInt-safe (`GetInt64`)
--   Multi-database support (`db.table`)
--   Clean TypeScript typings
--   Easily extensible (SQLite, Postgres, etc.)
+- C++-style API (ISQLConnection, ISQLQuery, ISQLResult, ISQLRow)
+- Promise-based & callback-based queries
+- MySQL driver (mysql2)
+- Serverless-style connection (no pool required)
+- Safe queries using prepared statements (?)
+- queryEx helper (tuple [result, error])
+- Transaction support
+- BigInt-safe (GetInt64)
+- Multi-database support (db.table)
+- Clean TypeScript typings
+- Easily extensible (SQLite, Postgres, etc.)
 
 ------------------------------------------------------------------------
 
 ## Installation
 
-```bash
 npm install sourcesql mysql2
+
+------------------------------------------------------------------------
+
+## Create Database
+
+```ts
+import { MySQLDatabase } from "sourcesql";
+
+const db = MySQLDatabase({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "test"
+});
 ```
 
 ------------------------------------------------------------------------
@@ -50,194 +62,134 @@ npm install sourcesql mysql2
 ## Basic Usage
 
 ```ts
-import { MySQLConnection } from "sourcesql";
+import { queryEx } from "sourcesql";
 
-const db = new MySQLConnection({
-  host: "localhost",
-  user: "root",
-  password: ""
-});
-
-await db.Connect();
-
-const query = await db.Query(
-  "SELECT id, name FROM test.users WHERE id = ?",
+const [query, err] = await queryEx(
+  db,
+  "SELECT id, name FROM users WHERE id = ?",
   [1]
 );
+
+if (err) return console.error(err);
 
 const result = query.GetResultSet();
 
 while (result.MoreRows()) {
   const row = result.FetchRow();
-
-  const id = row.GetInt("id");
-  const name = row.GetString("name");
-
-  console.log(id, name);
+  console.log(row.GetInt("id"), row.GetString("name"));
 }
-
-await db.Destroy();
 ```
 
 ------------------------------------------------------------------------
 
-## QueryEx (C++ style)
+## Express Example
 
 ```ts
-import { queryEx } from "sourcesql";
+import express from "express";
+import { MySQLDatabase, queryEx } from "sourcesql";
 
-const [query, err] = await queryEx(
-  db,
-  "SELECT * FROM test.users WHERE id = ?",
-  [1]
-);
+const app = express();
 
-if (err) {
-  console.error(err);
-} else {
+const db = MySQLDatabase({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "test"
+});
+
+app.get("/users", async (req, res) => {
+  const [query, err] = await queryEx(db, "SELECT * FROM users");
+
+  if (err) return res.status(500).json({ error: err });
+
   const result = query.GetResultSet();
-}
-```
+  const data = [];
 
-------------------------------------------------------------------------
-
-## Safe Queries (SQL Injection Protection)
-
-```ts
-// SAFE
-await db.Query(
-  "SELECT * FROM users WHERE name = ?",
-  [name]
-);
-
-// UNSAFE (NEVER DO THIS)
-await db.Query(`SELECT * FROM users WHERE name = '${name}'`);
-```
-
-------------------------------------------------------------------------
-
-## Multi Database Queries
-
-```ts
-await db.Query("SELECT * FROM test.users");
-await db.Query("SELECT * FROM logs.sessions");
-```
-
-Or safely:
-
-```ts
-const table = db.EscapeTable("test", "users");
-await db.Query(`SELECT * FROM ${table}`);
-```
-
-------------------------------------------------------------------------
-
-## Transactions
-
-```ts
-await db.ExecuteTransaction(
-  [
-    "INSERT INTO test.users (name) VALUES ('A')",
-    "UPDATE test.users SET name='B' WHERE id=1"
-  ],
-  (results) => {
-    console.log("Transaction success:", results.length);
-  },
-  (error) => {
-    console.error("Transaction failed:", error);
+  while (result.MoreRows()) {
+    const row = result.FetchRow();
+    data.push({
+      id: row.GetInt("id"),
+      name: row.GetString("name")
+    });
   }
-);
+
+  res.json(data);
+});
+
+app.listen(3000);
 ```
 
 ------------------------------------------------------------------------
 
-## API
-
-### ISQLConnection
+## NestJS Example
 
 ```ts
-Connect(callback?: (success: boolean) => void): Promise<void>
-Query(sql: string, params?: any[]): Promise<ISQLQuery>
-QueryCallback(sql: string, callback: (query, err?) => void): void
-ExecuteTransaction(...)
-Destroy(): Promise<void>
+import { Injectable } from "@nestjs/common";
+import { queryEx, MySQLDatabase } from "sourcesql";
 
-Escape(value: any): string
-EscapeId(value: string): string
-EscapeTable(db: string, table: string): string
-```
+const db = MySQLDatabase({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "test"
+});
 
-------------------------------------------------------------------------
+@Injectable()
+export class UsersService {
+  async getUsers() {
+    const [query, err] = await queryEx(db, "SELECT * FROM users");
+    if (err) throw err;
 
-### ISQLQuery
+    const result = query.GetResultSet();
+    const data = [];
 
-```ts
-GetResultSet(): ISQLResult | null
-GetInsertId(): number
-GetAffectedRows(): number
-GetType(): QueryType
-```
+    while (result.MoreRows()) {
+      const row = result.FetchRow();
+      data.push({
+        id: row.GetInt("id"),
+        name: row.GetString("name")
+      });
+    }
 
-------------------------------------------------------------------------
-
-### ISQLResult
-
-```ts
-GetRowCount(): number
-GetFieldCount(): number
-
-FieldNameToNum(name: string): number | null
-FieldNumToName(index: number): string | null
-
-MoreRows(): boolean
-FetchRow(): ISQLRow | null
-CurrentRow(): ISQLRow | null
-
-Rewind(): void
-```
-
-------------------------------------------------------------------------
-
-### ISQLRow
-
-```ts
-GetString(field: string | number): string | null
-GetInt(field: string | number): number
-GetFloat(field: string | number): number
-GetInt64(field: string | number): string
-IsNull(field: string | number): boolean
-```
-
-------------------------------------------------------------------------
-
-## Query Types
-
-```ts
-import { QueryType } from "sourcesql";
-
-switch (query.GetType()) {
-  case QueryType.SELECT:
-    break;
-  case QueryType.INSERT:
-    console.log(query.GetInsertId());
-    break;
-  case QueryType.UPDATE:
-  case QueryType.DELETE:
-    console.log(query.GetAffectedRows());
-    break;
+    return data;
+  }
 }
 ```
 
 ------------------------------------------------------------------------
 
-## Example (Field Index)
+## Next.js Example
 
 ```ts
-const col = result.FieldNameToNum("name");
+import { NextResponse } from "next/server";
+import { queryEx, MySQLDatabase } from "sourcesql";
 
-while (result.MoreRows()) {
-  const row = result.FetchRow();
-  console.log(row.GetString(col));
+const db = MySQLDatabase({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME
+});
+
+export async function GET() {
+  const [query, err] = await queryEx(db, "SELECT * FROM users");
+
+  if (err) {
+    return NextResponse.json({ error: err }, { status: 500 });
+  }
+
+  const result = query.GetResultSet();
+  const data = [];
+
+  while (result.MoreRows()) {
+    const row = result.FetchRow();
+    data.push({
+      id: row.GetInt("id"),
+      name: row.GetString("name")
+    });
+  }
+
+  return NextResponse.json(data);
 }
 ```
 
@@ -245,22 +197,10 @@ while (result.MoreRows()) {
 
 ## Notes
 
--   Always use **string for BIGINT values** (SteamID, Discord IDs)
--   Use `?` placeholders to prevent SQL injection
--   Do not escape values manually — use prepared params
--   Tables/columns must use `EscapeId`
-
-------------------------------------------------------------------------
-
-## Roadmap
-
--   SQLite driver
--   PostgreSQL driver
--   Prepared statements cache
--   Query formatter (`%d`, `%s`)
--   Async queue (SourceMod style)
--   Connection manager
--   Typed queries
+- Do not call db.end() after every query
+- Create DB once and reuse
+- Use ? placeholders to prevent SQL injection
+- Use GetInt64 for BIGINT values
 
 ------------------------------------------------------------------------
 
@@ -272,5 +212,4 @@ MIT
 
 ## Author
 
-**Michal "Slynx" Přikryl**
-https://slynxdev.cz
+Michal "Slynx" Přikryl

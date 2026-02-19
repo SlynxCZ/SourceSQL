@@ -1,15 +1,12 @@
-import mysql from "mysql2/promise";
 import { ISQLConnection } from "@core/ISQLConnection";
 import { ISQLQuery } from "@core/ISQLQuery";
+import { MySQLDatabase } from "@drivers/Mysql";
 import { MySQLQuery } from "@drivers/mysql/MySQLQuery";
 
 export class MySQLConnection implements ISQLConnection {
-  private pool: mysql.Pool;
   private connected = false;
 
-  constructor(private config: mysql.PoolOptions) {
-    this.pool = mysql.createPool(config);
-  }
+  constructor(private config: any) {}
 
   private BuildQueryResult(rows: any, meta: any, sql: string): ISQLQuery {
     if (Array.isArray(rows)) {
@@ -21,13 +18,14 @@ export class MySQLConnection implements ISQLConnection {
 
   async Connect(callback?: (success: boolean) => void): Promise<void> {
     try {
-      // ping = test connection
-      const conn = await this.pool.getConnection();
-      await conn.ping();
-      conn.release();
+      const db = MySQLDatabase(this.config);
+
+      await db.query("SELECT 1");
+      await db.end();
 
       this.connected = true;
       callback?.(true);
+
     } catch (err) {
       this.connected = false;
       callback?.(false);
@@ -36,8 +34,18 @@ export class MySQLConnection implements ISQLConnection {
   }
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
-    const [rows, meta] = await this.pool.query<any>(sql, params);
-    return this.BuildQueryResult(rows, meta, sql);
+    const db = MySQLDatabase(this.config);
+
+    try {
+      const rows = await db.query(sql, params);
+      await db.end();
+
+      return this.BuildQueryResult(rows, rows, sql);
+
+    } catch (err) {
+      await db.end();
+      throw err;
+    }
   }
 
   QueryCallback(
@@ -55,41 +63,41 @@ export class MySQLConnection implements ISQLConnection {
     success: (queries: ISQLQuery[]) => void,
     failure: (error: string) => void
   ) {
-    const conn = await this.pool.getConnection();
+    const db = MySQLDatabase(this.config);
 
     try {
-      await conn.beginTransaction();
+      await db.query("START TRANSACTION");
 
       const results: ISQLQuery[] = [];
 
       for (const sql of queries) {
-        const [rows, meta] = await conn.query<any>(sql);
-        results.push(this.BuildQueryResult(rows, meta, sql));
+        const rows = await db.query(sql);
+        results.push(this.BuildQueryResult(rows, rows, sql));
       }
 
-      await conn.commit();
+      await db.query("COMMIT");
+      await db.end();
+
       success(results);
 
     } catch (err: any) {
-      await conn.rollback();
-      failure(err?.message ?? "Transaction failed");
+      await db.query("ROLLBACK");
+      await db.end();
 
-    } finally {
-      conn.release();
+      failure(err?.message ?? "Transaction failed");
     }
   }
 
   async Destroy(): Promise<void> {
-    await this.pool.end();
-    this.connected = false;
+    // serverless → nic
   }
 
   Escape(value: any): string {
-    return mysql.escape(value);
+    return require("mysql2").escape(value);
   }
 
   EscapeId(value: string): string {
-    return mysql.escapeId(value);
+    return require("mysql2").escapeId(value);
   }
 
   EscapeTable(database: string, table: string): string {
