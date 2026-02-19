@@ -1,7 +1,7 @@
 import mysql2 from "mysql2";
 import ServerlessMysql from "@drivers/ServerlessMysql";
-import { ISQLQuery } from "@core/ISQLQuery";
-import { MySQLQuery } from "@drivers/mysql/MySQLQuery";
+import {ISQLQuery} from "@core/ISQLQuery";
+import {MySQLQuery} from "@drivers/mysql/MySQLQuery";
 
 const mysql = (ServerlessMysql as any).default || ServerlessMysql;
 
@@ -13,7 +13,7 @@ export function MySQLDatabase(config: {
   password: string;
   database?: string;
 }) {
-  const db = mysql({
+  return mysql({
     config: {
       host: config.host,
       user: config.user,
@@ -24,8 +24,6 @@ export function MySQLDatabase(config: {
     },
     library: mysql2 as any
   });
-
-  return db;
 }
 
 export interface MySQLError {
