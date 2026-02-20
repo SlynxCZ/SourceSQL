@@ -70,13 +70,27 @@ const [query, err] = await queryEx(
   [1]
 );
 
-if (err) return console.error(err);
+if (err || !query) {
+  console.error("Query failed:", err);
+  return;
+}
 
 const result = query.GetResultSet();
 
+if (!result) {
+  console.warn("No result set");
+  return;
+}
+
 while (result.MoreRows()) {
   const row = result.FetchRow();
-  console.log(row.GetInt("id"), row.GetString("name"));
+
+  if (!row) continue;
+
+  const id = row.GetInt("id");
+  const name = row.GetString("name");
+
+  console.log(id, name);
 }
 ```
 
@@ -100,13 +114,23 @@ const db = MySQLDatabase({
 app.get("/users", async (req, res) => {
   const [query, err] = await queryEx(db, "SELECT * FROM users");
 
-  if (err) return res.status(500).json({ error: err });
+  if (err || !query) {
+    return res.status(500).json({ error: err ?? "Query failed" });
+  }
 
   const result = query.GetResultSet();
+
+  if (!result) {
+    return res.json([]);
+  }
+
   const data = [];
 
   while (result.MoreRows()) {
     const row = result.FetchRow();
+
+    if (!row) continue;
+
     data.push({
       id: row.GetInt("id"),
       name: row.GetString("name")
@@ -138,13 +162,24 @@ const db = MySQLDatabase({
 export class UsersService {
   async getUsers() {
     const [query, err] = await queryEx(db, "SELECT * FROM users");
-    if (err) throw err;
+
+    if (err || !query) {
+      throw err ?? new Error("Query failed");
+    }
 
     const result = query.GetResultSet();
+
+    if (!result) {
+      return [];
+    }
+
     const data = [];
 
     while (result.MoreRows()) {
       const row = result.FetchRow();
+
+      if (!row) continue;
+
       data.push({
         id: row.GetInt("id"),
         name: row.GetString("name")
@@ -174,15 +209,26 @@ const db = MySQLDatabase({
 export async function GET() {
   const [query, err] = await queryEx(db, "SELECT * FROM users");
 
-  if (err) {
-    return NextResponse.json({ error: err }, { status: 500 });
+  if (err || !query) {
+    return NextResponse.json(
+      { error: err ?? "Query failed" },
+      { status: 500 }
+    );
   }
 
   const result = query.GetResultSet();
+
+  if (!result) {
+    return NextResponse.json([]);
+  }
+
   const data = [];
 
   while (result.MoreRows()) {
     const row = result.FetchRow();
+
+    if (!row) continue;
+
     data.push({
       id: row.GetInt("id"),
       name: row.GetString("name")
