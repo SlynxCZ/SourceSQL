@@ -31,6 +31,15 @@ export class MySQLConnection implements ISQLConnection {
     return this.connected;
   }
 
+  async Ping(): Promise<boolean> {
+    try {
+      await this.pool.query("SELECT 1");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private markSuccess() {
     this.connected = true;
   }
@@ -117,14 +126,5 @@ export class MySQLConnection implements ISQLConnection {
 
   EscapeTable(database: string, table: string): string {
     return `${this.EscapeId(database)}.${this.EscapeId(table)}`;
-  }
-
-  async Ping(): Promise<boolean> {
-    try {
-      await this.pool.query("SELECT 1");
-      return true;
-    } catch {
-      return false;
-    }
   }
 }

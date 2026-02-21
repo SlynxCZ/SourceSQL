@@ -3,7 +3,9 @@ import { ISQLQuery } from "@core/ISQLQuery";
 export interface ISQLConnection {
   Connect(callback?: (success: boolean) => void): Promise<void>;
   Destroy(): Promise<void>;
+
   IsConnected(): boolean;
+  Ping(): Promise<boolean>;
 
   Query(sql: string, params?: any[]): Promise<ISQLQuery>;
 
