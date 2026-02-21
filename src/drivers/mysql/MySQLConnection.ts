@@ -9,10 +9,10 @@ export class MySQLConnection implements ISQLConnection {
   constructor(private config: any) {
     this.pool = mysql.createPool({
       ...config,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      enableKeepAlive: true,
+      // waitForConnections: true,
+      // connectionLimit: 10,
+      // queueLimit: 0,
+      // enableKeepAlive: true,
     });
   }
 
@@ -35,15 +35,7 @@ export class MySQLConnection implements ISQLConnection {
   }
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
-    const start = performance.now();
-
     const [rows] = await this.pool.query(sql, params);
-
-    const time = performance.now() - start;
-
-    if (time > 100) {
-      console.warn(`[SLOW QUERY] ${time.toFixed(2)} ms -> ${sql}`);
-    }
 
     return new MySQLQuery(
       Array.isArray(rows) ? rows : [],

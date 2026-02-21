@@ -28,13 +28,13 @@ export class PostgresConnection implements ISQLConnection {
   constructor(config: ClientConfig) {
     this.pool = new Pool({
       ...config,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      // max: 10,
+      // idleTimeoutMillis: 30000,
+      // connectionTimeoutMillis: 5000,
     });
 
     this.pool.on("error", (err) => {
-      console.error("[PG POOL ERROR]", err);
+      console.error("[SourceSQL]", err);
     });
   }
 
@@ -58,16 +58,7 @@ export class PostgresConnection implements ISQLConnection {
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
     const { sql: newSql, args } = convertPlaceholders(sql, params);
-
-    const start = performance.now();
-
     const res = await this.pool.query(newSql, args);
-
-    const time = performance.now() - start;
-
-    if (time > 100) {
-      console.warn(`[SLOW QUERY] ${time.toFixed(2)} ms -> ${newSql}`);
-    }
 
     return new PostgresQuery(
       Array.isArray(res.rows) ? res.rows : [],
