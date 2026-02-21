@@ -23,48 +23,70 @@ function convertPlaceholders(sql: string, args?: any[]) {
 }
 
 export class PostgresConnection implements ISQLConnection {
+  private connected = false;
   private pool: Pool;
 
   constructor(config: ClientConfig) {
     this.pool = new Pool({
       ...config,
-      // max: 10,
-      // idleTimeoutMillis: 30000,
-      // connectionTimeoutMillis: 5000,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
     });
 
     this.pool.on("error", (err) => {
-      console.error("[SourceSQL]", err);
+      console.error("[SourceSQL] Pool error:", err);
     });
   }
 
   async Connect(callback?: (success: boolean) => void): Promise<void> {
-    try {
-      await this.pool.query("SELECT 1");
-      callback?.(true);
-    } catch (err) {
-      callback?.(false);
-      throw err;
-    }
-  }
-
-  IsConnected(): boolean {
-    return true;
+    this.connected = await this.Ping();
+    callback?.(this.connected);
   }
 
   async Destroy(): Promise<void> {
     await this.pool.end();
+    this.connected = false;
+  }
+
+  IsConnected(): boolean {
+    return this.connected;
+  }
+
+  private markSuccess() {
+    this.connected = true;
+  }
+
+  private markFailure() {
+    this.connected = false;
   }
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
     const { sql: newSql, args } = convertPlaceholders(sql, params);
-    const res = await this.pool.query(newSql, args);
 
-    return new PostgresQuery(
-      Array.isArray(res.rows) ? res.rows : [],
-      res,
-      newSql
-    );
+    try {
+      const res = await this.pool.query(newSql, args);
+      this.markSuccess();
+
+      return new PostgresQuery(res.rows ?? [], res, newSql);
+    } catch (err) {
+      this.markFailure();
+
+      // retry once (important for pg)
+      try {
+        const res = await this.pool.query(newSql, args);
+        this.markSuccess();
+
+        return new PostgresQuery(
+          Array.isArray(res.rows) ? res.rows : [],
+          res,
+          newSql
+        );
+      } catch (err2) {
+        this.markFailure();
+        throw err2;
+      }
+    }
   }
 
   QueryCallback(
@@ -86,7 +108,6 @@ export class PostgresConnection implements ISQLConnection {
 
     try {
       client = await this.pool.connect();
-
       await client.query("BEGIN");
 
       const results: ISQLQuery[] = [];
@@ -96,34 +117,34 @@ export class PostgresConnection implements ISQLConnection {
 
         const res = await client.query(sql, args);
 
-        results.push(
-          new PostgresQuery(
-            Array.isArray(res.rows) ? res.rows : [],
-            res,
-            sql
-          )
-        );
+        results.push(new PostgresQuery(
+          Array.isArray(res.rows) ? res.rows : [],
+          res,
+          sql
+        ));
       }
 
       await client.query("COMMIT");
 
+      this.markSuccess();
       success(results);
     } catch (err: any) {
+      this.markFailure();
+
       if (client) {
         try {
           await client.query("ROLLBACK");
         } catch {}
       }
 
-      failure(err?.message ?? "Transaction failed");
+      failure(err instanceof Error ? err.message : String(err));
     } finally {
       client?.release();
     }
   }
 
-  Escape(value: any): string {
-    if (value == null) return "NULL";
-    return `'${String(value).replace(/'/g, "''")}'`;
+  Escape(): never {
+    throw new Error("[SourceSQL] Escape() not supported in Postgres. Use parameters.");
   }
 
   EscapeId(value: string): string {
@@ -132,5 +153,14 @@ export class PostgresConnection implements ISQLConnection {
 
   EscapeTable(database: string, table: string): string {
     return `${this.EscapeId(database)}.${this.EscapeId(table)}`;
+  }
+
+  async Ping(): Promise<boolean> {
+    try {
+      await this.pool.query("SELECT 1");
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

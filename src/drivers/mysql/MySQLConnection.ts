@@ -4,44 +4,55 @@ import { MySQLQuery } from "@drivers/mysql/MySQLQuery";
 import mysql from "mysql2/promise";
 
 export class MySQLConnection implements ISQLConnection {
+  private connected = false;
   private pool: mysql.Pool;
 
   constructor(private config: any) {
     this.pool = mysql.createPool({
       ...config,
-      // waitForConnections: true,
-      // connectionLimit: 10,
-      // queueLimit: 0,
-      // enableKeepAlive: true,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
     });
   }
 
   async Connect(callback?: (success: boolean) => void): Promise<void> {
-    try {
-      await this.pool.query("SELECT 1");
-      callback?.(true);
-    } catch (err) {
-      callback?.(false);
-      throw err;
-    }
+    this.connected = await this.Ping();
+    callback?.(this.connected);
   }
 
   async Destroy(): Promise<void> {
     await this.pool.end();
+    this.connected = false;
   }
 
   IsConnected(): boolean {
-    return true;
+    return this.connected;
+  }
+
+  private markSuccess() {
+    this.connected = true;
+  }
+
+  private markFailure() {
+    this.connected = false;
   }
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
-    const [rows] = await this.pool.query(sql, params);
+    try {
+      const [rows] = await this.pool.query(sql, params);
+      this.markSuccess();
 
-    return new MySQLQuery(
-      Array.isArray(rows) ? rows : [],
-      rows,
-      sql
-    );
+      return new MySQLQuery(
+        Array.isArray(rows) ? rows : [],
+        rows,
+        sql
+      );
+    } catch (err) {
+      this.markFailure();
+      throw err;
+    }
   }
 
   QueryCallback(
@@ -63,7 +74,6 @@ export class MySQLConnection implements ISQLConnection {
 
     try {
       conn = await this.pool.getConnection();
-
       await conn.beginTransaction();
 
       const results: ISQLQuery[] = [];
@@ -71,25 +81,27 @@ export class MySQLConnection implements ISQLConnection {
       for (const q of queries) {
         const [rows] = await conn.query(q.sql, q.args);
 
-        results.push(
-          new MySQLQuery(
-            Array.isArray(rows) ? rows : [],
-            rows,
-            q.sql
-          )
-        );
+        results.push(new MySQLQuery(
+          Array.isArray(rows) ? rows : [],
+          rows,
+          q.sql
+        ));
       }
 
       await conn.commit();
+
+      this.markSuccess();
       success(results);
     } catch (err: any) {
+      this.markFailure();
+
       if (conn) {
         try {
           await conn.rollback();
         } catch {}
       }
 
-      failure(err?.message ?? "Transaction failed");
+      failure(err instanceof Error ? err.message : String(err));
     } finally {
       conn?.release();
     }
@@ -105,5 +117,14 @@ export class MySQLConnection implements ISQLConnection {
 
   EscapeTable(database: string, table: string): string {
     return `${this.EscapeId(database)}.${this.EscapeId(table)}`;
+  }
+
+  async Ping(): Promise<boolean> {
+    try {
+      await this.pool.query("SELECT 1");
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
