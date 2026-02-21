@@ -12,6 +12,13 @@ export class MySQLConnection implements ISQLConnection {
     if (!this.connection) {
       this.connection = await mysql.createConnection(this.config);
     }
+
+    try {
+      await this.connection.ping();
+    } catch {
+      this.connection = await mysql.createConnection(this.config);
+    }
+
     return this.connection;
   }
 
@@ -24,6 +31,17 @@ export class MySQLConnection implements ISQLConnection {
       callback?.(false);
       throw err;
     }
+  }
+
+  async Destroy(): Promise<void> {
+    if (this.connection) {
+      await this.connection.end();
+      this.connection = null;
+    }
+  }
+
+  IsConnected(): boolean {
+    return this.connection !== null;
   }
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
@@ -49,7 +67,7 @@ export class MySQLConnection implements ISQLConnection {
   }
 
   async ExecuteTransaction(
-    queries: string[],
+    queries: { sql: string; args?: any[] }[],
     success: (queries: ISQLQuery[]) => void,
     failure: (error: string) => void
   ) {
@@ -60,29 +78,21 @@ export class MySQLConnection implements ISQLConnection {
 
       const results: ISQLQuery[] = [];
 
-      for (const sql of queries) {
-        const [rows] = await conn.query(sql);
+      for (const q of queries) {
+        const [rows] = await conn.query(q.sql, q.args);
 
         results.push(new MySQLQuery(
           Array.isArray(rows) ? rows : [],
           rows,
-          sql
+          q.sql
         ));
       }
 
       await conn.query("COMMIT");
-
       success(results);
     } catch (err: any) {
       await conn.query("ROLLBACK");
       failure(err?.message ?? "Transaction failed");
-    }
-  }
-
-  async Destroy(): Promise<void> {
-    if (this.connection) {
-      await this.connection.end();
-      this.connection = null;
     }
   }
 

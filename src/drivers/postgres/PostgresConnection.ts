@@ -11,6 +11,7 @@ function normalizeArgs(args?: any[]): any[] | undefined {
 
 function convertPlaceholders(sql: string, args?: any[]) {
   const normalized = normalizeArgs(args);
+
   if (!normalized || normalized.length === 0) {
     return { sql, args: normalized };
   }
@@ -24,25 +25,71 @@ function convertPlaceholders(sql: string, args?: any[]) {
 
 export class PostgresConnection implements ISQLConnection {
   private client: Client | null = null;
+  private connected = false;
 
   constructor(private config: ClientConfig) {}
 
+  private createClient(): Client {
+    return new Client({
+      ...this.config,
+      ssl: (this.config as any).ssl ?? {
+        rejectUnauthorized: false,
+      },
+      keepAlive: true,
+      connectionTimeoutMillis: 5000,
+    });
+  }
+
   private async getClient(): Promise<Client> {
     if (!this.client) {
-      this.client = new Client(this.config);
+      this.client = this.createClient();
       await this.client.connect();
+      this.connected = true;
+      return this.client;
     }
-    return this.client;
+
+    try {
+      await this.client.query("SELECT 1");
+      return this.client;
+    } catch {
+      // reconnect
+      try {
+        await this.client.end();
+      } catch {}
+
+      this.client = this.createClient();
+      await this.client.connect();
+      this.connected = true;
+
+      return this.client;
+    }
   }
 
   async Connect(callback?: (success: boolean) => void): Promise<void> {
     try {
       const client = await this.getClient();
       await client.query("SELECT 1");
+
+      this.connected = true;
       callback?.(true);
     } catch (err) {
+      this.connected = false;
       callback?.(false);
       throw err;
+    }
+  }
+
+  IsConnected(): boolean {
+    return this.connected;
+  }
+
+  async Destroy(): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.end();
+      } catch {}
+      this.client = null;
+      this.connected = false;
     }
   }
 
@@ -84,33 +131,33 @@ export class PostgresConnection implements ISQLConnection {
 
       for (const q of queries) {
         const { sql, args } = convertPlaceholders(q.sql, q.args);
+
         const res = await client.query(sql, args);
 
-        results.push(new PostgresQuery(
-          Array.isArray(res.rows) ? res.rows : [],
-          res,
-          sql
-        ));
+        results.push(
+          new PostgresQuery(
+            Array.isArray(res.rows) ? res.rows : [],
+            res,
+            sql
+          )
+        );
       }
 
       await client.query("COMMIT");
 
       success(results);
     } catch (err: any) {
-      await client.query("ROLLBACK");
-      failure(err?.message ?? "Transaction failed");
-    }
-  }
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
 
-  async Destroy(): Promise<void> {
-    if (this.client) {
-      await this.client.end();
-      this.client = null;
+      failure(err?.message ?? "Transaction failed");
     }
   }
 
   Escape(value: any): string {
     if (value == null) return "NULL";
+    // simple fallback
     return `'${String(value).replace(/'/g, "''")}'`;
   }
 
