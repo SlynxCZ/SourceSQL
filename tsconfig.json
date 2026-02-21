@@ -6,9 +6,9 @@
 
     "baseUrl": "src",
     "paths": {
+      "@api/*": ["api/*"],
       "@core/*": ["core/*"],
       "@drivers/*": ["drivers/*"],
-      "@utils/*": ["utils/*"]
     },
     "noImplicitAny": false,
     "declaration": true,

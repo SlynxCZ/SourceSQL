@@ -1,8 +1,8 @@
 import { ISQLQuery, QueryType } from "@core/ISQLQuery";
-import { MySQLResult } from "@drivers/mysql/MySQLResult";
+import { PostgresResult } from "@drivers/postgres/PostgresResult";
 
-export class MySQLQuery implements ISQLQuery {
-  private result: MySQLResult | null;
+export class PostgresQuery implements ISQLQuery {
+  private result: PostgresResult | null;
   private type: QueryType;
 
   constructor(
@@ -11,12 +11,7 @@ export class MySQLQuery implements ISQLQuery {
     private sql: string
   ) {
     this.type = this.DetectType(sql);
-
-    if (rows && rows.length > 0) {
-      this.result = new MySQLResult(rows);
-    } else {
-      this.result = null;
-    }
+    this.result = rows.length > 0 ? new PostgresResult(rows) : null;
   }
 
   private DetectType(sql: string): QueryType {
@@ -35,12 +30,18 @@ export class MySQLQuery implements ISQLQuery {
   }
 
   GetInsertId(): number {
-    const val = this.meta?.insertId;
-    return val == null ? 0 : Number(val);
+    if (!this.meta?.rows?.length) return 0;
+
+    const row = this.meta.rows[0];
+
+    if ("id" in row) return Number(row.id) || 0;
+
+    const firstKey = Object.keys(row)[0];
+    return firstKey ? Number(row[firstKey]) || 0 : 0;
   }
 
   GetAffectedRows(): number {
-    return Number(this.meta?.affectedRows ?? 0);
+    return Number(this.meta?.rowCount ?? 0);
   }
 
   GetType(): QueryType {
