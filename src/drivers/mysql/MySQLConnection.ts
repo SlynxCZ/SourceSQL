@@ -4,28 +4,21 @@ import { MySQLQuery } from "@drivers/mysql/MySQLQuery";
 import mysql from "mysql2/promise";
 
 export class MySQLConnection implements ISQLConnection {
-  private connection: mysql.Connection | null = null;
+  private pool: mysql.Pool;
 
-  constructor(private config: any) {}
-
-  private async getConnection(): Promise<mysql.Connection> {
-    if (!this.connection) {
-      this.connection = await mysql.createConnection(this.config);
-    }
-
-    try {
-      await this.connection.ping();
-    } catch {
-      this.connection = await mysql.createConnection(this.config);
-    }
-
-    return this.connection;
+  constructor(private config: any) {
+    this.pool = mysql.createPool({
+      ...config,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+    });
   }
 
   async Connect(callback?: (success: boolean) => void): Promise<void> {
     try {
-      const conn = await this.getConnection();
-      await conn.query("SELECT 1");
+      await this.pool.query("SELECT 1");
       callback?.(true);
     } catch (err) {
       callback?.(false);
@@ -34,20 +27,23 @@ export class MySQLConnection implements ISQLConnection {
   }
 
   async Destroy(): Promise<void> {
-    if (this.connection) {
-      await this.connection.end();
-      this.connection = null;
-    }
+    await this.pool.end();
   }
 
   IsConnected(): boolean {
-    return this.connection !== null;
+    return true;
   }
 
   async Query(sql: string, params?: any[]): Promise<ISQLQuery> {
-    const conn = await this.getConnection();
+    const start = performance.now();
 
-    const [rows] = await conn.query(sql, params);
+    const [rows] = await this.pool.query(sql, params);
+
+    const time = performance.now() - start;
+
+    if (time > 100) {
+      console.warn(`[SLOW QUERY] ${time.toFixed(2)} ms -> ${sql}`);
+    }
 
     return new MySQLQuery(
       Array.isArray(rows) ? rows : [],
@@ -62,8 +58,8 @@ export class MySQLConnection implements ISQLConnection {
     params?: any[]
   ) {
     this.Query(sql, params)
-      .then(q => cb(q))
-      .catch(err => cb(null, err));
+      .then((q) => cb(q))
+      .catch((err) => cb(null, err));
   }
 
   async ExecuteTransaction(
@@ -71,28 +67,39 @@ export class MySQLConnection implements ISQLConnection {
     success: (queries: ISQLQuery[]) => void,
     failure: (error: string) => void
   ) {
-    const conn = await this.getConnection();
+    let conn: mysql.PoolConnection | null = null;
 
     try {
-      await conn.query("START TRANSACTION");
+      conn = await this.pool.getConnection();
+
+      await conn.beginTransaction();
 
       const results: ISQLQuery[] = [];
 
       for (const q of queries) {
         const [rows] = await conn.query(q.sql, q.args);
 
-        results.push(new MySQLQuery(
-          Array.isArray(rows) ? rows : [],
-          rows,
-          q.sql
-        ));
+        results.push(
+          new MySQLQuery(
+            Array.isArray(rows) ? rows : [],
+            rows,
+            q.sql
+          )
+        );
       }
 
-      await conn.query("COMMIT");
+      await conn.commit();
       success(results);
     } catch (err: any) {
-      await conn.query("ROLLBACK");
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch {}
+      }
+
       failure(err?.message ?? "Transaction failed");
+    } finally {
+      conn?.release();
     }
   }
 
